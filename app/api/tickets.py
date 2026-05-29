@@ -1,9 +1,13 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
 from app.schemas import Ticket, TicketCreate, TicketUpdate
 from app.crud import create_ticket, get_tickets, get_ticket, update_ticket
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/tickets",
@@ -38,7 +42,9 @@ def get_ticket_endpoint(ticket_id: str, db: Session = Depends(get_db)):
 # Update ticket
 @router.put("/{ticket_id}", response_model=Ticket)
 def update_ticket_endpoint(ticket_id: str, ticket_update: TicketUpdate, db: Session = Depends(get_db)):
+    logger.info(f"Received PUT /api/tickets/{ticket_id} with payload: {ticket_update.model_dump()}")
     db_ticket = update_ticket(db=db, ticket_id=ticket_id, update_data=ticket_update)
     if db_ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    logger.info(f"Returning ticket with {len(db_ticket.notes)} notes: {[note.note_text for note in db_ticket.notes]}")
     return db_ticket

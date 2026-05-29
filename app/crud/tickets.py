@@ -1,8 +1,12 @@
+import logging
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from typing import List, Optional
 from app.models import Ticket, Note
 from app.schemas import TicketCreate, TicketUpdate
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Helper to generate ticket ID like TCK-1001
 def generate_ticket_id(db: Session) -> str:
@@ -30,7 +34,8 @@ def create_ticket(db: Session, ticket_data: TicketCreate) -> Ticket:
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
-    return db_ticket
+    # Return ticket with notes relationship loaded
+    return get_ticket(db, ticket_id)
 
 # Get all tickets, with optional search and status filter
 def get_tickets(
@@ -62,6 +67,8 @@ def get_ticket(db: Session, ticket_id: str) -> Optional[Ticket]:
 
 # Update ticket (status and/or add note)
 def update_ticket(db: Session, ticket_id: str, update_data: TicketUpdate) -> Optional[Ticket]:
+    logger.info(f"CRUD: update_ticket called for ticket_id={ticket_id}")
+    logger.info(f"CRUD: update_data.new_note = {repr(update_data.new_note)}")
     db_ticket = get_ticket(db, ticket_id)
     if not db_ticket:
         return None
@@ -70,11 +77,17 @@ def update_ticket(db: Session, ticket_id: str, update_data: TicketUpdate) -> Opt
         db_ticket.status = update_data.status
     # Add note if provided
     if update_data.new_note and update_data.new_note.strip():
+        logger.info(f"CRUD: Creating note = {update_data.new_note.strip()}")
         db_note = Note(
             ticket_id=ticket_id,
             note_text=update_data.new_note.strip()
         )
         db.add(db_note)
+        db_ticket.notes.append(db_note)  # Add note to in-memory relationship
     db.commit()
-    db.refresh(db_ticket)
-    return db_ticket
+    # Expire the ticket to force reloading from database
+    db.expire(db_ticket)
+    # Reload ticket with updated notes relationship
+    updated_ticket = get_ticket(db, ticket_id)
+    logger.info(f"CRUD: Updated ticket has {len(updated_ticket.notes)} notes")
+    return updated_ticket
